@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Testes de Validação - Chave da NF</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 24px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 8px;
+    }
+    .summary {
+      background: #1e293b;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 24px;
+      display: flex;
+      gap: 20px;
+    }
+    .stat {
+      font-size: 1.1rem;
+    }
+    .stat.pass { color: #34d399; font-weight: bold; }
+    .stat.fail { color: #f87171; font-weight: bold; }
+    .test-card {
+      background: #1e293b;
+      border-left: 5px solid #64748b;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+    .test-card.pass {
+      border-left-color: #10b981;
+    }
+    .test-card.fail {
+      border-left-color: #ef4444;
+      background: #2a1b1b;
+    }
+    .test-title {
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+    }
+    .badge {
+      font-size: 0.8rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .badge.pass { background: #065f46; color: #a7f3d0; }
+    .badge.fail { background: #991b1b; color: #fecaca; }
+    .test-detail {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      margin-top: 6px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Bateria de Testes — js/validacao.js</h1>
+    <p style="color: #94a3b8; margin-top: 0;">Testes automatizados das funções puras de validação, DV Módulo 11 e classificação.</p>
+
+    <div class="summary" id="summary">
+      <div class="stat">Executando testes...</div>
+    </div>
+
+    <div id="results"></div>
+  </div>
+
+  <script type="module">
+    import {
+      limparChave,
+      formatarCnpj,
+      formatarChave,
+      extrairCampos,
+      dvValido,
+      validarChave,
+      classificar
+    } from '../js/validacao.js';
+
+    const results = [];
+
+    function assert(nome, condicao, detalhe = '') {
+      results.push({
+        nome,
+        passou: !!condicao,
+        detalhe: typeof detalhe === 'object' ? JSON.stringify(detalhe, null, 2) : String(detalhe)
+      });
+    }
+
+    // 1. Testes de limpeza de chave
+    assert('limparChave: remove espaços e traços', 
+      limparChave(' 3526 1111 - 2223 ') === '352611112223',
+      limparChave(' 3526 1111 - 2223 ')
+    );
+    assert('limparChave: trata nulo/vazio', 
+      limparChave(null) === '' && limparChave(undefined) === '',
+      'null/undefined'
+    );
+
+    // 2. Chaves de teste oficiais da especificação
+    const kCompra = '35261111222333000181550010000123451123456788';
+    const kTransf = '35261111444777000161550010000543211123456780';
+    const kDvInvalido = '35261111222333000181550010000123451123456789';
+
+    // 3. Testes de DV (Módulo 11)
+    assert('dvValido: Chave de Compra (DV 8)', dvValido(kCompra), 'Esperado true para ' + kCompra);
+    assert('dvValido: Chave de Transferência (DV 0)', dvValido(kTransf), 'Esperado true para ' + kTransf);
+    assert('dvValido: Chave com DV Incorreto (DV 9)', !dvValido(kDvInvalido), 'Esperado false para ' + kDvInvalido);
+    assert('dvValido: Chave incompleta (43 dígitos)', !dvValido(kCompra.substring(0, 43)), 'Esperado false');
+
+    // 4. Testes de extração de campos
+    const camposCompra = extrairCampos(kCompra);
+    assert('extrairCampos: UF correta (35 - SP)', camposCompra && camposCompra.uf === '35', camposCompra ? camposCompra.uf : null);
+    assert('extrairCampos: CNPJ Emitente correto (11222333000181)', camposCompra && camposCompra.cnpjEmitente === '11222333000181', camposCompra ? camposCompra.cnpjEmitente : null);
+    assert('extrairCampos: Modelo correto (55)', camposCompra && camposCompra.modelo === '55', camposCompra ? camposCompra.modelo : null);
+    assert('extrairCampos: Série correta (1)', camposCompra && camposCompra.serie === '1', camposCompra ? camposCompra.serie : null);
+    assert('extrairCampos: Número NF correto (12345)', camposCompra && camposCompra.numeroNf === '12345', camposCompra ? camposCompra.numeroNf : null);
+
+    // 5. Testes de validarChave
+    const valCompra = validarChave(kCompra);
+    assert('validarChave: Compra válida sem erros', valCompra.valido === true && valCompra.erro === null && valCompra.aviso === null, valCompra);
+
+    const valDvErr = validarChave(kDvInvalido);
+    assert('validarChave: DV inválido rejeitado com mensagem', 
+      valDvErr.valido === false && valDvErr.erro.includes('dígito verificador'),
+      valDvErr
+    );
+
+    const valTamanhoErr = validarChave('12345');
+    assert('validarChave: Tamanho menor rejeitado', 
+      valTamanhoErr.valido === false && valTamanhoErr.erro.includes('Chave inválida'),
+      valTamanhoErr
+    );
+
+    // Teste modelo diferente de 55 (ex: CT-e 57)
+    // Criar chave com modelo 57 e calcular DV
+    const baseCte = '3526111122233300018157001000012345112345678';
+    // Calculando DV para baseCte
+    const pesos = [2, 3, 4, 5, 6, 7, 8, 9];
+    let s = 0;
+    for (let i = baseCte.length - 1, p = 0; i >= 0; i--, p++) {
+      s += parseInt(baseCte[i], 10) * pesos[p % 8];
+    }
+    const r = s % 11;
+    const dvCte = r < 2 ? 0 : 11 - r;
+    const kCte = baseCte + dvCte;
+
+    const valCte = validarChave(kCte);
+    assert('validarChave: Modelo 57 permite gravação com aviso', 
+      valCte.valido === true && valCte.aviso && valCte.aviso.includes('57'),
+      valCte
+    );
+
+    // 6. Testes de classificação
+    const centros = { '11444777000161': 'Centro de Distribuição SP 5061' };
+    const fornecedores = { '11222333000181': 'Metalúrgica Parafusos SA' };
+
+    const clsTransf = classificar('11444777000161', centros, fornecedores);
+    assert('classificar: Centro reconhecido como TRANSFERENCIA', 
+      clsTransf.tipo === 'TRANSFERENCIA' && clsTransf.nomeEmitente.includes('Distribuição SP'),
+      clsTransf
+    );
+
+    const clsCompra = classificar('11222333000181', centros, fornecedores);
+    assert('classificar: Fornecedor reconhecido como COMPRA com nome', 
+      clsCompra.tipo === 'COMPRA' && clsCompra.nomeEmitente === 'Metalúrgica Parafusos SA',
+      clsCompra
+    );
+
+    const clsFora = classificar('99888777000199', centros, fornecedores);
+    assert('classificar: CNPJ desconhecido gera COMPRA e "fora da lista"', 
+      clsFora.tipo === 'COMPRA' && clsFora.nomeEmitente.includes('fora da lista'),
+      clsFora
+    );
+
+    // Renderizar resultados
+    const resultsContainer = document.getElementById('results');
+    const summaryContainer = document.getElementById('summary');
+
+    let totalPass = 0;
+    let totalFail = 0;
+
+    results.forEach(res => {
+      if (res.passou) totalPass++;
+      else totalFail++;
+
+      const card = document.createElement('div');
+      card.className = 'test-card ' + (res.passou ? 'pass' : 'fail');
+      card.innerHTML = `
+        <div class="test-title">
+          <span>${res.nome}</span>
+          <span class="badge ${res.passou ? 'pass' : 'fail'}">${res.passou ? 'APROVADO' : 'REPROVADO'}</span>
+        </div>
+        ${res.detalhe ? `<div class="test-detail">${res.detalhe}</div>` : ''}
+      `;
+      resultsContainer.appendChild(card);
+    });
+
+    summaryContainer.innerHTML = `
+      <div class="stat">Total de Testes: <strong>${results.length}</strong></div>
+      <div class="stat pass">Aprovados: ${totalPass}</div>
+      <div class="stat ${totalFail > 0 ? 'fail' : ''}">Reprovados: ${totalFail}</div>
+    `;
+  </script>
+</body>
+</html>

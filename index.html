@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="Chave da NF — Controle operacional de recebimento, fiscal e transferências de NF-e">
+  <title>Chave da NF — TK Elevator</title>
+
+  <!-- PWA Manifest & Ícones -->
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/svg+xml" href="./icons/icon-192.svg">
+  <link rel="apple-touch-icon" href="./icons/icon-192.svg">
+
+  <!-- Estilos -->
+  <link rel="stylesheet" href="./css/estilo.css">
+
+  <!-- Supabase JS via CDN fixa (UMD - Compatível com Android Chrome 80+ e WebViews) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.8/dist/umd/supabase.js"></script>
+</head>
+<body>
+
+  <!-- BANNER DE CONFIGURAÇÃO PENDENTE DO SUPABASE -->
+  <div id="banner-config-pendente" class="banner-alerta-global" style="display: none;">
+    ⚠️ <strong>Atenção:</strong> O Supabase ainda não foi configurado. Abra o arquivo <code>js/config.js</code> e insira sua URL e Anon Key.
+  </div>
+
+  <!-- BANNER DINÂMICO DE MODO ENTRADA (TRANSFERÊNCIA) -->
+  <div id="banner-modo-entrada" class="banner-modo-entrada" style="display: none;">
+    ⚠️ MODO ENTRADA ATIVO (Transferência) — Toque aqui para sair
+  </div>
+
+  <!-- =====================================================================
+       CABEÇALHO DA APLICAÇÃO
+       ===================================================================== -->
+  <header class="cabecalho-principal" id="cabecalho-app">
+    <div class="cabecalho-conteudo">
+      <div class="logo-bloco">
+        <div class="logo-icone">TK</div>
+        <div class="logo-titulo">
+          Chave da NF <span>Logística SP</span>
+        </div>
+      </div>
+
+      <div class="usuario-bloco-topo" id="topo-usuario-info">
+        <span id="badge-status-rede" class="badge-rede online">ONLINE</span>
+        <span id="badge-fila-offline" class="badge-fila" style="display: none;">0 pendentes</span>
+
+        <div class="usuario-info-textos">
+          <span class="usuario-nome" id="usuario-topo-nome">Carregando...</span>
+          <div class="usuario-meta">
+            <span class="badge" id="usuario-topo-papel">-</span>
+            <small class="text-muted" id="usuario-topo-unidade">-</small>
+          </div>
+        </div>
+
+        <button class="btn-logout" id="btn-logout" title="Sair da conta">Sair</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- =====================================================================
+       NAVEGAÇÃO POR ABAS (SPA HASH ROUTING)
+       ===================================================================== -->
+  <nav class="nav-abas" id="barra-navegacao">
+    <div class="nav-abas-conteudo">
+      <a href="#bipar" class="nav-tab-btn active" id="tab-nav-bipar">⚡ Bipar</a>
+      <a href="#pendencias" class="nav-tab-btn" id="tab-nav-pendencias">📋 Pendências</a>
+      <a href="#consulta" class="nav-tab-btn" id="tab-nav-consulta">🔍 Consulta</a>
+      <a href="#cadastros" class="nav-tab-btn" id="tab-nav-cadastros" style="display: none;">⚙ Cadastros</a>
+    </div>
+  </nav>
+
+  <!-- =====================================================================
+       TELA DE LOGIN / CRIAR CONTA (QUANDO NÃO AUTENTICADO)
+       ===================================================================== -->
+  <section class="container-auth" id="secao-auth" style="display: none;">
+    <div class="card-auth">
+      <div class="auth-header">
+        <div class="logo-icone" style="margin: 0 auto; width: 48px; height: 48px; font-size: 1.4rem;">TK</div>
+        <h1>Chave da NF</h1>
+        <p>Acesse com seu e-mail corporativo</p>
+      </div>
+
+      <!-- Formulário de Login -->
+      <form id="form-login">
+        <div class="campo-form">
+          <label for="login-email">E-mail</label>
+          <input type="email" id="login-email" class="input-controle" placeholder="seu.email@tkelevator.com" required autocomplete="email">
+        </div>
+        <div class="campo-form">
+          <label for="login-senha">Senha</label>
+          <input type="password" id="login-senha" class="input-controle" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn-primario" style="width: 100%; margin-top: 8px;">Entrar</button>
+      </form>
+
+      <!-- Formulário de Criar Conta -->
+      <form id="form-cadastro" style="display: none;">
+        <div class="campo-form">
+          <label for="cadastro-nome">Nome Completo</label>
+          <input type="text" id="cadastro-nome" class="input-controle" placeholder="Seu Nome" required autocomplete="name">
+        </div>
+        <div class="campo-form">
+          <label for="cadastro-email">E-mail</label>
+          <input type="email" id="cadastro-email" class="input-controle" placeholder="seu.email@tkelevator.com" required autocomplete="email">
+        </div>
+        <div class="campo-form">
+          <label for="cadastro-senha">Criar Senha</label>
+          <input type="password" id="cadastro-senha" class="input-controle" placeholder="Mínimo 6 caracteres" minlength="6" required autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn-primario" style="width: 100%; margin-top: 8px;">Criar Conta</button>
+      </form>
+
+      <button type="button" class="auth-toggle-link" id="btn-toggle-auth-modo">
+        Não tem conta? Criar nova conta
+      </button>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       TELA DE USUÁRIO INATIVO (AGUARDANDO LIBERAÇÃO DO ADMIN)
+       ===================================================================== -->
+  <section class="container-auth" id="secao-aguardando-liberacao" style="display: none;">
+    <div class="card-auth" style="text-align: center;">
+      <div style="font-size: 3rem; margin-bottom: 12px;">⏳</div>
+      <h2 style="font-size: 1.4rem; margin-bottom: 8px;">Aguardando Liberação</h2>
+      <p style="color: var(--texto-secundario); margin-bottom: 20px;">
+        Olá, <strong id="span-aguardando-nome">Operador</strong>! Sua conta foi criada com sucesso, mas seu acesso ainda precisa ser liberado pelo supervisor (ADMIN).
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button type="button" class="btn-primario" id="btn-verificar-aprovacao">Verificar Liberação</button>
+        <button type="button" class="btn-secundario" id="btn-logout-aguardando">Sair</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- =====================================================================
+       CONTEÚDO PRINCIPAL DO APP (QUANDO LOGADO E ATIVO)
+       ===================================================================== -->
+  <main class="conteudo-principal" id="secao-app" style="display: none;">
+
+    <!-- ===================================================================
+         VIEW: BIPAR (TELA PRINCIPAL DO COLETOR)
+         =================================================================== -->
+    <div class="view-conteudo" id="view-bipar">
+
+      <!-- Painel de Resultado do Bipe (Verde / Laranja / Vermelho) -->
+      <div class="painel-resultado ok" id="painel-resultado">
+        <div class="resultado-header">
+          <div class="resultado-icone">✓</div>
+          <div class="resultado-titulo-bloco">
+            <h2 class="resultado-titulo">LEITOR PRONTO</h2>
+            <p class="resultado-mensagem">Aponte o coletor de dados para o código de barras da DANFE (44 dígitos).</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card Central do Leitor -->
+      <div class="card-scanner" id="card-bipe">
+        <!-- Seletor de Etapa (visível apenas para ADMIN) -->
+        <div class="seletor-etapa-admin" id="container-seletor-admin" style="display: none;">
+          <label for="select-etapa-admin">Modo Supervisor — Escolher Etapa Manualmente:</label>
+          <select id="select-etapa-admin" class="select-controle">
+            <option value="RECEBIMENTO">Etapa: RECEBIMENTO</option>
+            <option value="FISCAL">Etapa: FISCAL</option>
+            <option value="ENTRADA_DADA">Etapa: ENTRADA DADA</option>
+          </select>
+        </div>
+
+        <div class="campo-bipe-wrapper">
+          <input
+            type="text"
+            id="input-chave"
+            class="input-leitor-chave"
+            placeholder="BIPE A CHAVE AQUI (44 DÍGITOS)"
+            autofocus
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+            inputmode="none"
+          />
+        </div>
+
+        <div class="botoes-acao-bipe">
+          <button type="button" class="btn-util" id="btn-toggle-teclado">
+            ⌨ Teclado (Desligado)
+          </button>
+          <button type="button" class="btn-util btn-entrada-toggle" id="btn-modo-entrada">
+            📥 Dar Entrada (Transferência)
+          </button>
+        </div>
+      </div>
+
+      <!-- Histórico dos Últimos 10 Bipes do Operador -->
+      <section class="secao-historico-hoje">
+        <div class="topo-secao-historico">
+          <h3 class="titulo-secao">Últimos Bipes Registrados</h3>
+          <span class="contador-hoje-badge">Bipadas hoje: <span id="contador-bipadas-hoje">0</span></span>
+        </div>
+        <div class="lista-bipes" id="lista-ultimos-bipes">
+          <div class="lista-vazia">Nenhum bipe registrado hoje ainda.</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ===================================================================
+         VIEW: PENDÊNCIAS (RELATÓRIO GERENCIAL)
+         =================================================================== -->
+    <div class="view-conteudo" id="view-pendencias" style="display: none;">
+
+      <!-- Cards de Resumo -->
+      <div class="cards-resumo-grade">
+        <div class="card-resumo destaque-perigo">
+          <span class="card-resumo-rotulo">Total de Pendências</span>
+          <span class="card-resumo-valor" id="card-resumo-total">0</span>
+        </div>
+        <div class="card-resumo destaque-aviso">
+          <span class="card-resumo-rotulo">Perdidas (Recebimento sem Fiscal)</span>
+          <span class="card-resumo-valor" id="card-resumo-compras">0</span>
+        </div>
+        <div class="card-resumo destaque-primario">
+          <span class="card-resumo-rotulo">Transferências sem Entrada</span>
+          <span class="card-resumo-valor" id="card-resumo-transferencias">0</span>
+        </div>
+        <div class="card-resumo destaque-perigo">
+          <span class="card-resumo-rotulo">Lançadas sem Recebimento</span>
+          <span class="card-resumo-valor" id="card-resumo-sem-recebimento">0</span>
+        </div>
+      </div>
+
+      <!-- Quadro Resumo por Unidade -->
+      <section class="secao-unidades">
+        <h3 class="titulo-secao">Pendências por Unidade</h3>
+        <div class="quadro-unidades-grade" id="quadro-resumo-unidades">
+          <span class="text-muted">Carregando unidades...</span>
+        </div>
+      </section>
+
+      <!-- Barra de Filtros e Exportação -->
+      <div class="barra-filtros">
+        <div class="grupo-filtro">
+          <label for="filtro-pendencias-unidade">Unidade</label>
+          <select id="filtro-pendencias-unidade" class="select-controle">
+            <option value="">Todas as Unidades</option>
+          </select>
+        </div>
+
+        <div class="grupo-filtro">
+          <label for="filtro-pendencias-tipo">Tipo</label>
+          <select id="filtro-pendencias-tipo" class="select-controle">
+            <option value="">Todos os Tipos</option>
+            <option value="COMPRA">COMPRA</option>
+            <option value="TRANSFERENCIA">TRANSFERÊNCIA</option>
+          </select>
+        </div>
+
+        <div class="grupo-filtro" style="max-width: 140px;">
+          <label for="filtro-pendencias-horas">Prazo Mínimo (h)</label>
+          <input type="number" id="filtro-pendencias-horas" class="input-controle" value="24" min="0" step="1">
+        </div>
+
+        <div class="acoes-filtros">
+          <button type="button" class="btn-secundario" id="btn-atualizar-pendencias">🔄 Atualizar</button>
+          <button type="button" class="btn-primario" id="btn-exportar-csv">📥 Exportar CSV</button>
+        </div>
+      </div>
+
+      <!-- Tabela Detalhada de Pendências -->
+      <div class="tabela-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Chave da NF</th>
+              <th>NF / Série</th>
+              <th>Emitente</th>
+              <th>Tipo</th>
+              <th>Unidade</th>
+              <th>Último Bipe</th>
+              <th>Tempo Pendente</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-pendencias-corpo">
+            <tr><td colspan="8" class="text-center py-4">Carregando relatório...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         VIEW: CONSULTA (HISTÓRICO COMPLETO POR CHAVE)
+         =================================================================== -->
+    <div class="view-conteudo" id="view-consulta" style="display: none;">
+      <div class="card-consulta-busca">
+        <h3 class="titulo-secao" style="margin-bottom: 12px;">Consultar Linha do Tempo da NF-e</h3>
+        <p style="color: var(--texto-secundario); font-size: 0.9rem; margin-bottom: 16px;">
+          Bipe ou cole a chave de acesso de 44 dígitos para rastrear quem bipou, em qual etapa e quando.
+        </p>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <input
+            type="text"
+            id="input-consulta-chave"
+            class="input-controle"
+            placeholder="Cole ou digite a chave de 44 dígitos..."
+            style="flex: 1; min-width: 280px; font-family: monospace;"
+            maxlength="44"
+          />
+          <button type="button" class="btn-primario" id="btn-buscar-consulta">🔍 Consultar</button>
+        </div>
+      </div>
+
+      <div id="resultado-consulta-historico">
+        <!-- Renderizado dinamicamente -->
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         VIEW: CADASTROS (ADMIN)
+         =================================================================== -->
+    <div class="view-conteudo" id="view-cadastros" style="display: none;">
+
+      <!-- Sub-abas administrativas -->
+      <div class="cadastros-sub-abas">
+        <button type="button" class="tab-cadastro active" data-tab="secao-cad-centros">🏢 Centros (Transferência)</button>
+        <button type="button" class="tab-cadastro" data-tab="secao-cad-fornecedores">📦 Fornecedores (Compras)</button>
+        <button type="button" class="tab-cadastro" data-tab="secao-cad-usuarios">👥 Usuários e Permissões</button>
+        <button type="button" class="tab-cadastro" data-tab="secao-cad-config">⚙ Configurações Gerais</button>
+      </div>
+
+      <!-- 1. Centros -->
+      <div class="secao-cadastro active" id="secao-cad-centros">
+        <div class="card-formulario-cadastro">
+          <h3 class="titulo-secao" style="margin-bottom: 12px;">Cadastrar Novo Centro</h3>
+          <form id="form-add-centro" class="form-linha">
+            <div>
+              <label for="add-centro-cnpj" style="font-size: 0.8rem; color: var(--texto-secundario);">CNPJ do Centro</label>
+              <input type="text" id="add-centro-cnpj" class="input-controle" placeholder="11.444.777/0001-61" required>
+            </div>
+            <div>
+              <label for="add-centro-nome" style="font-size: 0.8rem; color: var(--texto-secundario);">Nome do Centro</label>
+              <input type="text" id="add-centro-nome" class="input-controle" placeholder="Centro de Distribuição SP 5061" required>
+            </div>
+            <button type="submit" class="btn-primario">Adicionar</button>
+          </form>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h4 style="font-size: 1rem;">Centros Cadastrados</h4>
+          <button type="button" class="btn-secundario" id="btn-abrir-importar-csv">📥 Importar Lista em CSV</button>
+        </div>
+
+        <div class="tabela-container">
+          <table>
+            <thead>
+              <tr>
+                <th>CNPJ</th>
+                <th>Nome / Descrição</th>
+                <th class="text-right">Ação</th>
+              </tr>
+            </thead>
+            <tbody id="tabela-centros-corpo">
+              <tr><td colspan="4" class="text-center py-4">Carregando centros...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 2. Fornecedores -->
+      <div class="secao-cadastro" id="secao-cad-fornecedores">
+        <div class="card-formulario-cadastro">
+          <h3 class="titulo-secao" style="margin-bottom: 12px;">Cadastrar Novo Fornecedor</h3>
+          <form id="form-add-fornecedor" class="form-linha">
+            <div>
+              <label for="add-fornecedor-cnpj" style="font-size: 0.8rem; color: var(--texto-secundario);">CNPJ do Fornecedor</label>
+              <input type="text" id="add-fornecedor-cnpj" class="input-controle" placeholder="11.222.333/0001-81" required>
+            </div>
+            <div>
+              <label for="add-fornecedor-nome" style="font-size: 0.8rem; color: var(--texto-secundario);">Razão Social / Nome Fantasia</label>
+              <input type="text" id="add-fornecedor-nome" class="input-controle" placeholder="Metalúrgica Peças SA" required>
+            </div>
+            <button type="submit" class="btn-primario">Adicionar</button>
+          </form>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap;">
+          <input type="text" id="busca-fornecedor" class="input-controle" placeholder="Buscar por CNPJ ou nome..." style="max-width: 320px;">
+          <button type="button" class="btn-secundario" onclick="document.getElementById('btn-abrir-importar-csv').click();">📥 Importar Fornecedores CSV</button>
+        </div>
+
+        <div class="tabela-container">
+          <table>
+            <thead>
+              <tr>
+                <th>CNPJ</th>
+                <th>Nome do Fornecedor</th>
+                <th class="text-right">Ação</th>
+              </tr>
+            </thead>
+            <tbody id="tabela-fornecedores-corpo">
+              <tr><td colspan="4" class="text-center py-4">Carregando fornecedores...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 3. Usuários -->
+      <div class="secao-cadastro" id="secao-cad-usuarios">
+        <div style="margin-bottom: 14px;">
+          <h3 class="titulo-secao">Usuários da Empresa</h3>
+          <p style="color: var(--texto-secundario); font-size: 0.85rem;">
+            Libere novos usuários, defina seus papéis (RECEBIMENTO, FISCAL ou ADMIN) e suas respectivas unidades.
+          </p>
+        </div>
+
+        <div class="tabela-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>E-mail</th>
+                <th>Papel</th>
+                <th>Unidade</th>
+                <th>Status</th>
+                <th class="text-right">Ação</th>
+              </tr>
+            </thead>
+            <tbody id="tabela-usuarios-corpo">
+              <tr><td colspan="6" class="text-center py-4">Carregando usuários...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 4. Configurações -->
+      <div class="secao-cadastro" id="secao-cad-config">
+        <div class="card-formulario-cadastro" style="max-width: 500px;">
+          <h3 class="titulo-secao" style="margin-bottom: 12px;">Prazo de Alerta de Pendência</h3>
+          <p style="color: var(--texto-secundario); font-size: 0.85rem; margin-bottom: 14px;">
+            Quantidade de horas para que uma nota sem avanço de etapa seja sinalizada como pendente no relatório.
+          </p>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <input type="number" id="input-config-horas-alerta" class="input-controle" value="24" min="1" style="max-width: 120px;">
+            <button type="button" class="btn-primario" id="btn-salvar-horas-config">Salvar Prazo</button>
+          </div>
+        </div>
+
+        <div class="card-formulario-cadastro" style="max-width: 500px; border-color: #7f1d1d; background: #1c1114;">
+          <h3 class="titulo-secao" style="color: #f87171; margin-bottom: 10px;">Zona de Perigo — Limpar Testes</h3>
+          <p style="color: var(--texto-secundario); font-size: 0.85rem; margin-bottom: 14px;">
+            Exclui permanentemente todos os registros de bipes de teste para iniciar o uso real da operação. Cadastros de fornecedores e centros são mantidos.
+          </p>
+          <button type="button" class="btn-perigo" id="btn-limpar-dados-teste">Limpar Bipes de Teste</button>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- =====================================================================
+       MODAL: IMPORTAR CSV (CENTROS OU FORNECEDORES)
+       ===================================================================== -->
+  <div class="modal-backdrop" id="modal-importar-csv" style="display: none;">
+    <div class="modal-janela">
+      <div class="modal-header">
+        <h3 style="font-size: 1.2rem;">Importar Registros em Lote (CSV)</h3>
+        <button class="btn-fechar-modal" id="btn-fechar-modal-csv">&times;</button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div>
+          <label style="font-size: 0.85rem; color: var(--texto-secundario); display: block; margin-bottom: 4px;">Destino:</label>
+          <select id="select-tipo-csv-destino" class="select-controle">
+            <option value="fornecedores">Fornecedores (Compras)</option>
+            <option value="centros">Centros Internos (Transferências)</option>
+          </select>
+        </div>
+
+        <div>
+          <label style="font-size: 0.85rem; color: var(--texto-secundario); display: block; margin-bottom: 4px;">Arquivo CSV (.csv ou .txt):</label>
+          <input type="file" id="arquivo-csv-input" accept=".csv, .txt" class="input-controle">
+        </div>
+
+        <div>
+          <label style="font-size: 0.85rem; color: var(--texto-secundario); display: block; margin-bottom: 4px;">
+            Ou cole o texto aqui (formato: <code>cnpj;nome</code>):
+          </label>
+          <textarea
+            id="texto-csv-input"
+            class="input-controle"
+            rows="6"
+            style="font-family: monospace; font-size: 0.85rem;"
+            placeholder="11222333000181;Metalúrgica Peças SA&#10;11.444.777/0001-61;Centro SP 5061"
+          ></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
+          <button type="button" class="btn-secundario" onclick="document.getElementById('modal-importar-csv').style.display='none';">Cancelar</button>
+          <button type="button" class="btn-primario" id="btn-processar-importacao-csv">Iniciar Importação</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Script Principal da Aplicação -->
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
